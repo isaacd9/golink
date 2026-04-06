@@ -39,6 +39,49 @@ func linkID(short string) string {
 	return id
 }
 
+// DB is the storage backend for links and click stats.
+type DB interface {
+	// Load returns a Link by its short name, or fs.ErrNotExist if not found.
+	// The caller owns the returned value.
+	Load(short string) (*Link, error)
+
+	// LoadAll returns all stored Links.
+	// The caller owns the returned values.
+	LoadAll() ([]*Link, error)
+
+	// Save stores a Link, inserting or replacing any existing entry.
+	Save(link *Link) error
+
+	// Delete removes a Link by its short name.
+	Delete(short string) error
+
+	// GetLinksByOwner returns all Links owned by the given owner.
+	GetLinksByOwner(owner string) ([]*Link, error)
+
+	// LoadStats returns total click counts keyed by link short name.
+	LoadStats() (ClickStats, error)
+
+	// SaveStats records incremental click counts since the last call.
+	SaveStats(stats ClickStats) error
+
+	// DeleteStats removes all click stats for a link.
+	DeleteStats(short string) error
+
+	// ExportStats returns all raw stat rows ordered by creation time and ID.
+	// Each entry represents incremental clicks recorded at a point in time.
+	ExportStats() ([]*StatEntry, error)
+
+	// Now returns the current time.
+	Now() time.Time
+}
+
+// StatEntry is a single row from the Stats table, as returned by ExportStats.
+type StatEntry struct {
+	ID      string
+	Created int64
+	Clicks  int
+}
+
 // SQLiteDB stores Links in a SQLite database.
 type SQLiteDB struct {
 	db *sql.DB
@@ -47,7 +90,7 @@ type SQLiteDB struct {
 	clock tstime.Clock // allow overriding time for tests
 }
 
-//go:embed schema.sql
+//go:embed sqlite_schema.sql
 var sqlSchema string
 
 // NewSQLiteDB returns a new SQLiteDB that stores links in a SQLite database stored at f.
@@ -224,6 +267,27 @@ func (s *SQLiteDB) DeleteStats(short string) error {
 		return err
 	}
 	return nil
+}
+
+// ExportStats returns all raw stat rows ordered by creation time and ID.
+func (s *SQLiteDB) ExportStats() ([]*StatEntry, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	rows, err := s.db.Query("SELECT ID, Created, Clicks FROM Stats ORDER BY Created, ID")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var entries []*StatEntry
+	for rows.Next() {
+		e := new(StatEntry)
+		if err := rows.Scan(&e.ID, &e.Created, &e.Clicks); err != nil {
+			return nil, err
+		}
+		entries = append(entries, e)
+	}
+	return entries, rows.Err()
 }
 
 // GetLinksByOwner returns all Links owned by the specified owner.

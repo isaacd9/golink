@@ -110,7 +110,7 @@ var LastSnapshot []byte
 var embeddedFS embed.FS
 
 // db stores short links.
-var db *SQLiteDB
+var db DB
 
 var localClient *local.Client
 
@@ -381,12 +381,11 @@ func initMetrics() {
 // initMetricsData set metrics to what is represented in the DB
 func initMetricsData() error {
 	// Set the totalLinkCount metric to what is saved in the DB
-	var count float64
-	err := db.db.QueryRow("SELECT COUNT(DISTINCT id) FROM Links").Scan(&count)
+	links, err := db.LoadAll()
 	if err != nil {
 		return err
 	}
-	totalLinkCount.Set(count)
+	totalLinkCount.Set(float64(len(links)))
 
 	return nil
 }
@@ -1097,29 +1096,14 @@ func serveExportStats(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 
-	rows, err := db.db.Query("SELECT ID, Created, Clicks FROM Stats ORDER BY Created, ID")
+	entries, err := db.ExportStats()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	defer func() {
-		rows.Close()
-		if err := rows.Err(); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-		}
-	}()
-
-	for rows.Next() {
-		var id string
-		var created int64
-		var clicks int
-		err := rows.Scan(&id, &created, &clicks)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
+	for _, e := range entries {
 		// id is not permitted to contain commas, so no need to worry about CSV quoting
-		fmt.Fprintf(w, "%s,%d,%d\n", id, created, clicks)
+		fmt.Fprintf(w, "%s,%d,%d\n", e.ID, e.Created, e.Clicks)
 	}
 }
 

@@ -366,12 +366,12 @@ func TestServeExport(t *testing.T) {
 		Start: time.Date(2022, 06, 02, 1, 2, 3, 4, time.UTC),
 	})
 
-	var err error
-	db, err = NewSQLiteDB(":memory:")
-	db.clock = clock
+	sdb, err := NewSQLiteDB(":memory:")
 	if err != nil {
 		t.Fatal(err)
 	}
+	sdb.clock = clock
+	db = sdb
 	db.Save(&Link{Short: "a", Owner: "a@example.com"})
 	db.Save(&Link{Short: "foo", Owner: "foo@example.com"})
 	db.Save(&Link{Short: "link-owned-by-tagged-devices", Long: "/before", Owner: "tagged-devices"})
