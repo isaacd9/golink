@@ -59,7 +59,8 @@ const (
 var (
 	verbose           = flag.Bool("verbose", false, "be verbose")
 	controlURL        = flag.String("control-url", ipn.DefaultControlURL, "the URL base of the control plane (i.e. coordination server)")
-	sqlitefile        = flag.String("sqlitedb", "", "path of SQLite database to store links")
+	sqlitefile        = flag.String("sqlitedb", "", "path of SQLite database to store links (mutually exclusive with --postgres-dsn)")
+	pgdsn             = flag.String("postgres-dsn", "", "PostgreSQL connection string (mutually exclusive with --sqlitedb)")
 	dev               = flag.String("dev-listen", "", "if non-empty, listen on this addr and run in dev mode; auto-set sqlitedb if empty and don't use tsnet")
 	useHTTPS          = flag.Bool("https", true, "serve golink over HTTPS if enabled on tailnet")
 	snapshot          = flag.String("snapshot", "", "file path of snapshot file")
@@ -129,22 +130,29 @@ func Run() error {
 		}
 	}
 
-	if *sqlitefile == "" {
-		if devMode() {
-			tmpdir, err := os.MkdirTemp("", "golink_dev_*")
-			if err != nil {
-				return err
-			}
-			*sqlitefile = filepath.Join(tmpdir, "golink.db")
-			log.Printf("Dev mode temp db: %s", *sqlitefile)
-		} else {
-			return errors.New("--sqlitedb is required")
-		}
-	}
-
 	var err error
-	if db, err = NewSQLiteDB(*sqlitefile); err != nil {
-		return fmt.Errorf("NewSQLiteDB(%q): %w", *sqlitefile, err)
+	if *pgdsn != "" && *sqlitefile != "" {
+		return errors.New("--sqlitedb and --postgres-dsn are mutually exclusive")
+	} else if *pgdsn != "" {
+		if db, err = NewPostgresDB(context.Background(), *pgdsn); err != nil {
+			return fmt.Errorf("NewPostgresDB: %w", err)
+		}
+	} else {
+		if *sqlitefile == "" {
+			if devMode() {
+				tmpdir, err := os.MkdirTemp("", "golink_dev_*")
+				if err != nil {
+					return err
+				}
+				*sqlitefile = filepath.Join(tmpdir, "golink.db")
+				log.Printf("Dev mode temp db: %s", *sqlitefile)
+			} else {
+				return errors.New("--sqlitedb or --postgres-dsn is required")
+			}
+		}
+		if db, err = NewSQLiteDB(*sqlitefile); err != nil {
+			return fmt.Errorf("NewSQLiteDB(%q): %w", *sqlitefile, err)
+		}
 	}
 
 	if *snapshot != "" {
