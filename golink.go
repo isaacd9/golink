@@ -60,7 +60,7 @@ var (
 	verbose           = flag.Bool("verbose", false, "be verbose")
 	controlURL        = flag.String("control-url", ipn.DefaultControlURL, "the URL base of the control plane (i.e. coordination server)")
 	sqlitefile        = flag.String("sqlitedb", "", "path of SQLite database to store links (mutually exclusive with --postgres-dsn)")
-	pgdsn             = flag.String("postgres-dsn", "", "PostgreSQL connection string (mutually exclusive with --sqlitedb)")
+	pgdsn             = flag.String("postgres-dsn", "", "PostgreSQL connection string (mutually exclusive with --sqlitedb); falls back to POSTGRES_DSN env var")
 	dev               = flag.String("dev-listen", "", "if non-empty, listen on this addr and run in dev mode; auto-set sqlitedb if empty and don't use tsnet")
 	useHTTPS          = flag.Bool("https", true, "serve golink over HTTPS if enabled on tailnet")
 	snapshot          = flag.String("snapshot", "", "file path of snapshot file")
@@ -128,6 +128,10 @@ func Run() error {
 		if flag.NArg() != 1 {
 			log.Fatal("--resolve-from-backup also requires a link to be resolved")
 		}
+	}
+
+	if *pgdsn == "" {
+		*pgdsn = os.Getenv("POSTGRES_DSN")
 	}
 
 	var err error
